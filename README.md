@@ -63,4 +63,3 @@
 |	QwenCoder1.5	|	2404	|	  	|	|	  	|		|	  	|
 |	Self-Organized Agents	|	2404	|	  	|	|	  	|	Self-Organized Agents: A LLM Multi-Agent Framework toward Ultra Large-Scale Code Generation and Optimization	|	  	|
 |	StableCode	|	2404	|	  	|	|	  	|	Stable Code Technical Report	|	  	|
-![image](https://github.com/guanziju/CodeLLM/assets/95598412/cf93c380-5e56-44c4-8fde-89f1b2d69ce3)
