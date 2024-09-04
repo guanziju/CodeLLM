@@ -1,0 +1,83 @@
+from PIL import Image
+from transformers import AutoProcessor, CLIPVisionModelWithProjection, AutoTokenizer, CLIPTextModelWithProjection
+import numpy as np
+import os
+
+modelVision = CLIPVisionModelWithProjection.from_pretrained("/Dataset/clip/")
+processor = AutoProcessor.from_pretrained("/Dataset/clip/")
+modelText = CLIPTextModelWithProjection.from_pretrained("/Dataset/clip/")
+tokenizer = AutoTokenizer.from_pretrained("/Dataset/clip/")
+
+def write_fvecs(filename, data):
+    print(data.dtype)
+    assert data.dtype == np.float32, "Data should be float32"
+    n, d = data.shape
+    with open(filename, 'wb') as f:
+        for i in range(n):
+            f.write(np.array([d], dtype=np.float32).tobytes())
+            f.write(data[i].tobytes())
+
+def fvecs_read(filename):
+    return ivecs_read(filename).view('float32')
+
+def ivecs_read(filename):
+    a = np.fromfile(filename, dtype='int32')
+    d = a[0]
+    return a.reshape(-1, d + 1)[:, 1:].copy()
+
+def embedding_vision(image_path):
+    image = Image.open(image_path)
+    inputs = processor(images=image, return_tensors="pt")
+    outputs = modelVision(**inputs)
+    return outputs.image_embeds.detach().numpy()
+
+def embedding_text(text_path):
+    with open(text_path, 'r') as file:
+        content = file.read()
+    print(content)
+    inputs = tokenizer([content], padding=True, return_tensors="pt")
+    outputs = modelText(**inputs)
+    return outputs.text_embeds.detach().numpy()
+
+def traverse_directory(path):
+    paths = []
+    for root, dirs, files in os.walk(path):
+        for file in files:
+            file_path = os.path.join(root, file)
+            paths.append(file_path)
+        for dir in dirs:
+            dir_path = os.path.join(root, dir)
+            paths.append(dir_path)
+    return paths
+
+if __name__ == '__main__':
+
+    root = '/Dataset/coyo-700m/part00'
+    jpg_list = [] # 用于保存图片文件的文件地址
+    txt_list = [] # 用于保存文本文件的文件地址
+
+    for dir in os.listdir(root): # os.listdir()，os是python标准库,用来实现一些系统调用，listdir是获取指定目录下所有文件和文件夹，返回结果是一个列表，列表内容是文件名和文件夹名，类型是字符串
+        if '.tar.tar' in dir: # 筛选名字中带有'.tar.tar'的文件夹
+            cur_dir = os.path.join(root, dir) # os.path.join()，path.join是将两个文件地址进行拼接，因为dir是root下的文件夹
+            for file in os.listdir(cur_dir): # 这是获取拼接后的文件目录下的所有文件和文件夹，返回结果也是一个列表，具体来说应该都是文件
+                if file.endswith('.txt'): # 筛选其中的文本文件，注意这里都是文件地址
+                    txt_list.append(os.path.join(cur_dir, file)) # 还是拼接，得到完整的文本文件地址
+                if file.endswith('.jpg'): # 筛选其中的图片文件，注意这里都是文件地址
+                    jpg_list.append(os.path.join(cur_dir, file)) # 还是拼接，得到完整的图片文件地址
+
+    jpg_list.sort() #对文本文件地址进行排序，具体来说是按照字典序排序，或者说按照首字母顺序排序
+    txt_list.sort() #对图片文件地址进行排序，具体来说是按照字典序排序，或者说按照首字母顺序排序
+
+    # 到这里为止获取了全部的文本和图片地址列表，即jpg_list和txt_list
+
+    res_img = np.ndarray((0, 512), dtype=np.float32) # 这里声明了一个numpy数组，用于保存嵌入后的图片文件
+    res_txt = np.ndarray((0, 512), dtype=np.float32) # 这里声明了一个numpy数组，用于保存嵌入后的文本文件，高度是0，因为还没存，宽度是521，正是嵌入向量的维度，ndarray是声明多维数组用的，(0, 512)是一个元组，表示有两个维度，并且给出了每个维度的大小
+
+    for jpg, txt in zip(jpg_list, txt_list): # 遍历文本和图片列表，zip是一种封装方法，对于两个list，a=[1, 2, 3], b = [4, 5, 6], zip(a, b) = [(1, 4), (2, 5), (3, 6)]，要求两个list大小相同，对封装之后的结果进行遍历，每次就是用一个元组给(jpg, txt)赋值，当然，这里不是数字，而是两个用来表示文件地址的字符串。因为之前已经排序过了，所以文本和图片正好是一一对应的。
+        image_embeds = embedding_vision(jpg) # embedding_vision是加载的图嵌入模型，对图进行嵌入，嵌入，也就是向量化
+        text_embeds = embedding_text(txt) # embedding_text是加载的文本嵌入模型，对文本进行嵌入
+        res_img = np.vstack((res_img, image_embeds)) # vstack是numpy的一个方法，可以向numpy数组增加数据，第一个参数是被增加数据的numpy数组，第二个参数是要增加的数据，这里是图像的嵌入，返回值是增加数据后的numpy数组
+        res_txt = np.vstack((res_txt, text_embeds)) # vstack是numpy的一个方法，可以向numpy数组增加数据，第一个参数是被增加数据的numpy数组，第二个参数是要增加的数据，这里是文本的嵌入，返回值是增加数据后的numpy数组
+
+    write_fvecs('res_img.fevcs', res_img) # 这里就是写入文件，将得到的图嵌入存到指定文件里
+    write_fvecs('res_txt.fevcs', res_txt) # 这里就是写入文件，将得到的文本入存到指定文件里
